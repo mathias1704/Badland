@@ -1,0 +1,119 @@
+#include <allegro.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define LARGEUR_ECRAN 800
+#define HAUTEUR_ECRAN 600
+#define GRAVITE 1
+#define SAUT -12
+#define SCROLL_VITESSE_BASE 3
+#define PSEUDO_MAX 20
+#define TEMPS_NIVEAU 60 * 30
+#define NB_OBSTACLES 5
+#define BOOST_DUREE 150
+#define NB_IMAGES_DECOR_MAX 20
+#define CHEMIN_DATA "data/"
+#define CHEMIN_SPRITES CHEMIN_DATA "sprites/"
+#define CHEMIN_NIVEAUX CHEMIN_DATA "niveaux/"
+#define CHEMIN_DECORS CHEMIN_DATA "decors/"
+
+typedef struct {
+    int x, y;
+    int vitesseY;
+    int vivant;
+    char pseudo[PSEUDO_MAX];
+    int aGagne;
+    float echelle;  // 1.0 = taille normale, >1 = grossi, <1 = rapetissi
+    float poids;
+    int scrollX;
+} Joueur;
+
+typedef struct {
+    float x, y;           // Centre de la roue
+    float rayon;          // Rayon des tiges
+    float angle;          // Angle de rotation actuel
+    float vitesse;        // Vitesse de rotation (en radians/sec)
+    int nbBranches;       // Nombre de branches
+} Roue;
+
+typedef struct {
+    BITMAP* images[NB_IMAGES_DECOR_MAX];
+    int largeur_total;
+    int nb_images;
+} Decor;
+
+// Structure obstacle
+typedef struct {
+    int x, y;
+    int type;  // 0=pique, 1=roue, 2=piston, 3=bonus noir
+    int taille;
+} Obstacle;
+typedef enum {
+    OBSTACLE_PIQUE = 0,
+    OBSTACLE_ROUE = 1,
+    OBSTACLE_PISTON = 2,
+    OBSTACLE_TUNNEL = -1,
+    OBSTACLE_SPECIAL = -2
+} TypeObstacle;
+#define MAX_CLONES 5  // Nombre maximum de clones
+
+typedef struct {
+    float x, y;           // Position absolue
+    float vitesseY;
+    int actif;
+    float offsetX, offsetY; // Décalage relatif au joueur
+} Clone;
+Clone clones[MAX_CLONES];
+BITMAP* bonus_bleu_img;
+int multiplicateur_actif = 0;
+int multiplicateur_timer = 0;
+#define MULTIPLICATEUR_DUREE 300  // Durée en frames (5 sec à 60 fps)
+Joueur joueur;
+Decor decor;
+Obstacle obstacles[NB_OBSTACLES];
+BITMAP* buffer;
+BITMAP* joueur_img;
+BITMAP* obstacle_pique;
+BITMAP* obstacle_roue;
+BITMAP* obstacle_piston;
+BITMAP* tunnel_img;  // Ajoutez avec les autres déclarations de BITMAP*
+// Avec les autres déclarations de BITMAP*
+BITMAP* bonus_noir_img;
+BITMAP* bonus_vert_img;
+int scroll_vitesse = SCROLL_VITESSE_BASE;
+int boost_actif = 0;
+int boost_timer = 0;
+int tunnel_position_x = 0;
+int tunnel_position_y = 0;
+BITMAP* tunnel_img = NULL;
+void init();
+void quitter();
+void sauvegarderJoueur();
+void afficherMenu();
+void afficherJoueur();
+void afficherObstacles();
+void gererSaut();
+void gererScroll();
+void initialiserObstacles();
+void verifierCollisions();
+void gererBoost();
+void dessinerDecor();
+void afficherRegles();
+void saisirPseudo();
+void afficherMenuPrincipal();
+void chargerDecorDepuisDossier(Decor* d, int numNiveau);
+void chargerNiveau(int numNiveau);
+int verifierVictoire();
+void chargerDecor(const char* nomsImages[], int nb);
+void initialiserNiveau(int numNiveau);
+void chargerDecorDepuisDossier(Decor* d, int numNiveau);
+void jouerNiveau(int numNiveau);
+void activerBonus();
+void activerBonusVert();
+void reinitialiserTaille();
+void activerMultiplicateur();
+void updateClones();
+void drawClones();
+void afficherGameOver(int tempsSecondes);
