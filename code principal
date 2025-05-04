@@ -1,0 +1,237 @@
+int main() {
+    srand(time(NULL));
+    init();
+    afficherMenuPrincipal();
+    quitter();
+    return 0;
+}
+END_OF_MAIN();
+void afficherGameOver(int tempsSecondes) {
+    int continuer = 0;
+
+    while (!continuer) {
+        clear_bitmap(buffer);
+
+        // Fond semi-transparent
+        set_trans_blender(0, 0, 0, 180);
+        rectfill(buffer, 100, 100, LARGEUR_ECRAN-100, HAUTEUR_ECRAN-100, makecol(0, 0, 0));
+
+        // Message Game Over
+        textout_centre_ex(buffer, font, "GAME OVER",
+                         LARGEUR_ECRAN/2, HAUTEUR_ECRAN/2 - 40,
+                         makecol(255, 0, 0), -1);
+
+        // Affichage du temps
+        char tempsMsg[50];
+        sprintf(tempsMsg, "Temps: %d secondes", tempsSecondes);
+        textout_centre_ex(buffer, font, tempsMsg,
+                         LARGEUR_ECRAN/2, HAUTEUR_ECRAN/2,
+                         makecol(255, 255, 255), -1);
+
+        // Instruction
+        textout_centre_ex(buffer, font, "Appuyez sur ESPACE pour recommencer",
+                         LARGEUR_ECRAN/2, HAUTEUR_ECRAN/2 + 60,
+                         makecol(200, 200, 0), -1);
+
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+
+        if (key[KEY_SPACE]) {
+            continuer = 1;
+            clear_keybuf();
+        }
+
+        rest(20);
+    }
+}
+void drawClones() {
+    if (!multiplicateur_actif) return;
+
+    for (int i = 0; i < MAX_CLONES; i++) {
+        if (!clones[i].actif) continue;
+
+        // Calcul de la position à l'écran
+        int drawX = clones[i].x - joueur.scrollX;
+        int drawY = clones[i].y;
+
+        // Vérification si le clone est visible
+        if (drawX < -50 || drawX > LARGEUR_ECRAN) continue;
+
+        BITMAP* temp = create_bitmap(joueur_img->w * joueur.echelle,
+                                   joueur_img->h * joueur.echelle);
+        stretch_blit(joueur_img, temp, 0, 0, joueur_img->w, joueur_img->h,
+                   0, 0, temp->w, temp->h);
+
+        // Dessin avec transparence pour effet "clone"
+        set_trans_blender(0, 0, 0, 180);
+        draw_trans_sprite(buffer, temp,
+                        drawX - temp->w/2,
+                        drawY - temp->h/2);
+        destroy_bitmap(temp);
+    }
+}
+void updateClones() {
+    if (!multiplicateur_actif) return;
+
+    for (int i = 0; i < MAX_CLONES; i++) {
+        if (!clones[i].actif) continue;
+
+        // 1. Mettre à jour la position de base (suivi du joueur)
+        clones[i].x = joueur.x + clones[i].offsetX;
+        clones[i].y = joueur.y + clones[i].offsetY;
+
+        // 2. Appliquer la même physique que le joueur
+        clones[i].vitesseY = joueur.vitesseY;
+        clones[i].y += clones[i].vitesseY;
+
+        // 3. Limites de l'écran (en coordonnées écran)
+        int screenY = clones[i].y;
+        if (screenY < 0) {
+            clones[i].y = 0;
+            clones[i].vitesseY = 0;
+        }
+        else if (screenY > HAUTEUR_ECRAN - 32) {
+            clones[i].y = HAUTEUR_ECRAN - 32;
+            clones[i].vitesseY = 0;
+        }
+    }
+}
+void activerMultiplicateur() {
+    for (int i = 0; i < MAX_CLONES; i++) {
+        clones[i].actif = 1;
+        clones[i].offsetX = (rand() % 100 - 50); // Décalage entre -50 et +50
+        clones[i].offsetY = (rand() % 60 - 30);  // Décalage entre -30 et +30
+        clones[i].x = joueur.x + clones[i].offsetX;
+        clones[i].y = joueur.y + clones[i].offsetY;
+        clones[i].vitesseY = joueur.vitesseY;
+    }
+    multiplicateur_actif = 1;
+    multiplicateur_timer = 0;
+}
+void reinitialiserTaille() {
+    joueur.echelle = 1.0f;
+    joueur.poids = 1.0f;
+    printf("Taille réinitialisée!\n");
+
+    // Important : ne pas oublier de retirer le timer
+    remove_int(reinitialiserTaille);
+}
+void activerBonusVert() {
+    // Vérification de sécurité
+    if (!bonus_vert_img) return;
+
+    // Effet aléatoire
+    if (rand() % 2 == 0) {
+        joueur.echelle = 1.5f;
+        joueur.poids = 1.8f;
+        printf("Joueur grossi!\n");
+    } else {
+        joueur.echelle = 0.7f;
+        joueur.poids = 0.5f;
+        printf("Joueur rapetissi!\n");
+    }
+
+    // Désactiver le timer existant s'il y en a un
+    remove_int(reinitialiserTaille);
+
+    // Configurer le timer pour la réinitialisation après 5 secondes
+    install_int_ex(reinitialiserTaille, SECS_TO_TIMER(5));
+}
+void activerBonus() {
+    scroll_vitesse = SCROLL_VITESSE_BASE * 2; // Double la vitesse
+    boost_timer = 0;
+    boost_actif = 1;
+    // Vous pourriez ajouter un son ici
+}
+void chargerDecorDepuisDossier(Decor* d, int numNiveau) {
+    char dossier[100];
+    sprintf(dossier, "data/decors/niveau%d/", numNiveau);
+
+    d->largeur_total = 0;
+    d->nb_images = 0;
+
+    char chemin[256];
+    for (int i = 0; i < NB_IMAGES_DECOR_MAX; i++) {
+        sprintf(chemin, "%s%d.bmp", dossier, i);
+        BITMAP* img = load_bitmap(chemin, NULL);
+
+        if (!img) {
+            if (i == 0) {
+                allegro_message("Aucune image de decor trouvee dans %s", dossier);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+
+        d->images[i] = img;
+        d->largeur_total += img->w;
+        d->nb_images++;
+    }
+}
+int verifierVictoire() {
+    if (!tunnel_img || tunnel_position_x == 0) return 0;
+
+    int tunnelX = tunnel_position_x - joueur.scrollX;
+    int tunnelW = tunnel_img->w;
+    int tunnelH = tunnel_img->h;
+
+    // Hitbox du joueur (comme dans verifierCollisions)
+    int joueurW = 32 * joueur.echelle;
+    int joueurH = 32 * joueur.echelle;
+    int joueurLeft = joueur.x - joueurW/2;
+    int joueurRight = joueur.x + joueurW/2;
+    int joueurTop = joueur.y - joueurH/2;
+    int joueurBottom = joueur.y + joueurH/2;
+
+    // Vérification collision précise
+    return (joueurRight > tunnelX &&
+            joueurLeft < tunnelX + tunnelW &&
+            joueurBottom > tunnel_position_y &&
+            joueurTop < tunnel_position_y + tunnelH);
+}
+void initialiserNiveau(int numNiveau) {
+    // Libération ancien décor
+    for (int i = 0; i < decor.nb_images; i++) {
+        if (decor.images[i]) {
+            destroy_bitmap(decor.images[i]);
+            decor.images[i] = NULL; // Réinitialiser le pointeur
+        }
+    }
+
+    chargerDecorDepuisDossier(&decor, numNiveau);
+    chargerNiveau(numNiveau);
+}
+
+void chargerDecor(const char* nomsImages[], int nb) {
+    decor.nb_images = nb;
+    decor.largeur_total = 0;
+
+    for (int i = 0; i < nb; i++) {
+        decor.images[i] = load_bitmap(nomsImages[i], NULL);
+        if (!decor.images[i]) {
+            allegro_message("Image %s non trouvée.", nomsImages[i]);
+            exit(EXIT_FAILURE);
+        }
+        decor.largeur_total += decor.images[i]->w;
+    }
+}
+
+int afficherMenuChoixNiveau() {
+    int choix = 0;
+
+    while (choix < 1 || choix > 3) {
+        clear_to_color(buffer, makecol(0, 0, 0));
+        textout_ex(buffer, font, "Choisis un niveau :", 100, 100, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, "1. Niveau 1", 120, 140, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, "2. Niveau 2", 120, 170, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, "3. Niveau 3", 120, 200, makecol(255, 255, 255), -1);
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+
+        if (key[KEY_1]) choix = 1;
+        if (key[KEY_2]) choix = 2;
+        if (key[KEY_3]) choix = 3;
+
+        rest(100); // petite pause pour éviter le rebond de touche
+    }
+
+    return choix;
+}
