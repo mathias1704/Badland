@@ -1,0 +1,365 @@
+void chargerDecorDepuisDossier(Decor* d, int numNiveau) {
+    char dossier[100];
+    sprintf(dossier, "data/decors/niveau%d/", numNiveau);
+
+    d->largeur_total = 0;
+    d->nb_images = 0;
+
+    char chemin[256];
+    for (int i = 0; i < NB_IMAGES_DECOR_MAX; i++) {
+        sprintf(chemin, "%s%d.bmp", dossier, i);
+        BITMAP* img = load_bitmap(chemin, NULL);
+
+        if (!img) {
+            if (i == 0) {
+                allegro_message("Aucune image de decor trouvee dans %s", dossier);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+
+        d->images[i] = img;
+        d->largeur_total += img->w;
+        d->nb_images++;
+    }
+}
+int verifierVictoire() {
+    if (!tunnel_img || tunnel_position_x == 0) return 0;
+
+    int tunnelX = tunnel_position_x - joueur.scrollX;
+    int tunnelW = tunnel_img->w;
+    int tunnelH = tunnel_img->h;
+
+    // Hitbox du joueur (comme dans verifierCollisions)
+    int joueurW = 32 * joueur.echelle;
+    int joueurH = 32 * joueur.echelle;
+    int joueurLeft = joueur.x - joueurW/2;
+    int joueurRight = joueur.x + joueurW/2;
+    int joueurTop = joueur.y - joueurH/2;
+    int joueurBottom = joueur.y + joueurH/2;
+
+    // Vérification collision précise
+    return (joueurRight > tunnelX &&
+            joueurLeft < tunnelX + tunnelW &&
+            joueurBottom > tunnel_position_y &&
+            joueurTop < tunnel_position_y + tunnelH);
+}
+void initialiserNiveau(int numNiveau) {
+    // Libération ancien décor
+    for (int i = 0; i < decor.nb_images; i++) {
+        if (decor.images[i]) {
+            destroy_bitmap(decor.images[i]);
+            decor.images[i] = NULL; // Réinitialiser le pointeur
+        }
+    }
+
+    chargerDecorDepuisDossier(&decor, numNiveau);
+    chargerNiveau(numNiveau);
+}
+
+void chargerDecor(const char* nomsImages[], int nb) {
+    decor.nb_images = nb;
+    decor.largeur_total = 0;
+
+    for (int i = 0; i < nb; i++) {
+        decor.images[i] = load_bitmap(nomsImages[i], NULL);
+        if (!decor.images[i]) {
+            allegro_message("Image %s non trouvée.", nomsImages[i]);
+            exit(EXIT_FAILURE);
+        }
+        decor.largeur_total += decor.images[i]->w;
+    }
+}
+
+int afficherMenuChoixNiveau() {
+    int choix = 0;
+
+    while (choix < 1 || choix > 3) {
+        clear_to_color(buffer, makecol(0, 0, 0));
+        textout_ex(buffer, font, "Choisis un niveau :", 100, 100, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, "1. Niveau 1", 120, 140, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, "2. Niveau 2", 120, 170, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, "3. Niveau 3", 120, 200, makecol(255, 255, 255), -1);
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+
+        if (key[KEY_1]) choix = 1;
+        if (key[KEY_2]) choix = 2;
+        if (key[KEY_3]) choix = 3;
+
+        rest(100); // petite pause pour éviter le rebond de touche
+    }
+
+    return choix;
+}
+
+
+void chargerNiveau(int numNiveau) {
+    char chemin[256];
+    sprintf(chemin, "%sniveau%d.txt", CHEMIN_NIVEAUX, numNiveau);
+
+    FILE* f = fopen(chemin, "r");
+    if (!f) {
+        allegro_message("Erreur: Impossible d'ouvrir %s", chemin);
+        exit(1);
+    }
+
+    // Réinitialiser la position du tunnel
+    tunnel_position_x = 0;
+    tunnel_position_y = 0;
+
+    for (int i = 0; i < NB_OBSTACLES; i++) {
+        int type_obstacle;
+        if (fscanf(f, "%d %d %d", &obstacles[i].x, &obstacles[i].y, &type_obstacle) != 3) {
+            printf("Erreur lecture obstacle %d\n", i);
+            continue;
+        }
+
+        // Si c'est un tunnel (type spécial)
+        if (type_obstacle == OBSTACLE_TUNNEL) {
+            tunnel_position_x = obstacles[i].x;
+            tunnel_position_y = obstacles[i].y;
+            obstacles[i].type = OBSTACLE_TUNNEL; // -1 selon votre enum
+        } else {
+            obstacles[i].type = type_obstacle;
+        }
+    }
+    fclose(f);
+}
+void init() {
+    allegro_init();
+    install_keyboard();
+    set_color_depth(32);
+    set_gfx_mode(GFX_AUTODETECT_WINDOWED, LARGEUR_ECRAN, HAUTEUR_ECRAN, 0, 0);
+
+    buffer = create_bitmap(LARGEUR_ECRAN, HAUTEUR_ECRAN);
+
+    // Chargement des sprites
+    joueur_img = load_bitmap(CHEMIN_SPRITES "joueur.bmp", NULL);
+    obstacle_pique = load_bitmap(CHEMIN_SPRITES "pique.bmp", NULL);
+    obstacle_roue = load_bitmap(CHEMIN_SPRITES "roue.bmp", NULL);
+    obstacle_piston = load_bitmap(CHEMIN_SPRITES "piston.bmp", NULL);
+    tunnel_img = load_bitmap("data/sprites/tunnel.bmp", NULL);
+    bonus_noir_img = load_bitmap(CHEMIN_SPRITES "bonusnoire.bmp", NULL);
+    bonus_vert_img = load_bitmap(CHEMIN_SPRITES "bonusvert.bmp", NULL);
+    for (int i = 0; i < MAX_CLONES; i++) {
+        clones[i].actif = 0;
+    }
+    bonus_bleu_img = load_bitmap(CHEMIN_SPRITES "bonusbleu.bmp", NULL);
+    if (!bonus_bleu_img) {
+        allegro_message("Erreur: bonusbleu.bmp non trouvé");
+        exit(EXIT_FAILURE);
+    }
+    if (!bonus_vert_img) {
+        allegro_message("ERREUR: Impossible de charger bonusvert.bmp");
+        exit(1);
+    } else {
+        printf("Bonus vert bien charge!\n"); // Confirmation
+    }
+    if (!bonus_noir_img) {
+        allegro_message("Erreur: bonusnoire.bmp non trouvé");
+        exit(EXIT_FAILURE);
+    }
+    if (!tunnel_img) {
+        allegro_message("Erreur: tunnel.bmp non trouvé");
+        exit(EXIT_FAILURE);
+    }
+    if (!joueur_img || !obstacle_pique || !obstacle_roue || !obstacle_piston) {
+        allegro_message("Erreur chargement sprites");
+        exit(EXIT_FAILURE);
+    }
+    printf("Chemin niveaux: %s\n", CHEMIN_NIVEAUX);
+    printf("Chemin sprites: %s\n", CHEMIN_SPRITES);
+}
+
+void quitter() {
+    // Libère toutes les images de décor
+    for (int i = 0; i < decor.nb_images; i++) {
+        if (decor.images[i]) {
+            destroy_bitmap(decor.images[i]);
+        }
+    }
+
+    destroy_bitmap(joueur_img);
+    destroy_bitmap(buffer);
+    destroy_bitmap(obstacle_pique);
+    destroy_bitmap(obstacle_roue);
+    destroy_bitmap(obstacle_piston);
+    destroy_bitmap(tunnel_img);
+    destroy_bitmap(bonus_noir_img);
+    destroy_bitmap(bonus_vert_img);
+    remove_int(reinitialiserTaille);
+    allegro_exit();
+}
+
+
+void afficherMenu() {
+    int i = 0;
+    char c;
+    joueur.pseudo[0] = '\0';
+
+    while (!key[KEY_ENTER]) {
+        clear_bitmap(buffer);
+        textout_ex(buffer, font, "Entrez votre pseudo :", 100, 100, makecol(255, 255, 255), -1);
+        textout_ex(buffer, font, joueur.pseudo, 100, 130, makecol(0, 255, 0), -1);
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+
+        if (keypressed()) {
+            c = readkey() & 0xff;
+            if ((c >= 32 && c <= 126) && i < PSEUDO_MAX - 1) {
+                joueur.pseudo[i++] = c;
+                joueur.pseudo[i] = '\0';
+            } else if (c == 8 && i > 0) {
+                i--;
+                joueur.pseudo[i] = '\0';
+            }
+        }
+        rest(20);
+    }
+    clear_keybuf();
+
+}
+
+void sauvegarderJoueur() {
+    FILE* fichier = fopen("save.txt", "w");
+    if (fichier) {
+        fprintf(fichier, "%s %d\n", joueur.pseudo, 2);
+        fclose(fichier);
+    }
+}
+
+void initialiserObstacles() {
+    for (int i = 0; i < NB_OBSTACLES; i++) {
+        obstacles[i].x = LARGEUR_ECRAN + i * 400;
+        obstacles[i].y = rand() % (HAUTEUR_ECRAN - 200) + 50;
+        obstacles[i].type = rand() % 3;
+        obstacles[i].taille = 60 + rand() % 60;
+        obstacles[i].type = rand() % 3; // 0 = pique, 1 = roue, 2 = piston
+
+    }
+}
+
+
+void jouerNiveau(int numNiveau) {
+    joueur.x = 100;
+    joueur.y = HAUTEUR_ECRAN / 2;
+    joueur.vitesseY = 0;
+    joueur.vivant = 1;
+    joueur.scrollX = 0;
+    scroll_vitesse = SCROLL_VITESSE_BASE;
+    boost_actif = 0;
+    boost_timer = 0;
+    joueur.echelle = 1.0f;
+    joueur.poids = 1.0f;
+    chargerDecorDepuisDossier(&decor, numNiveau);
+    chargerNiveau(numNiveau);
+    for (int i = 0; i < NB_OBSTACLES; i++) {
+        printf("Obstacle %d: type=%d @ (%d,%d)\n",
+              i, obstacles[i].type, obstacles[i].x, obstacles[i].y);
+    }
+    // Animation d'introduction
+    for (int frame = 0; frame < 100; frame++) {
+        clear_bitmap(buffer);
+        dessinerDecor();
+        draw_sprite(buffer, joueur_img, joueur.x - 16, joueur.y - 16);
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+        rest(20);
+    }
+
+    textout_ex(screen, font, "Appuie sur ESPACE pour decoller !", 250, 500, makecol(255, 255, 255), -1);
+    while (!key[KEY_SPACE]) rest(20);
+    clear_keybuf();
+
+    int compteurTemps = 0;
+
+    while (!key[KEY_ESC] && joueur.vivant && compteurTemps < TEMPS_NIVEAU) {
+        if (key[KEY_SPACE]) {
+            gererSaut();
+        } else {
+            joueur.vitesseY += GRAVITE;
+        }
+        joueur.vitesseY += GRAVITE * joueur.poids;
+        if (key[KEY_B] && !boost_actif) {
+            boost_actif = 1;
+            boost_timer = 0;
+            scroll_vitesse = SCROLL_VITESSE_BASE * 2;
+        }
+
+        gererBoost();
+        joueur.y += joueur.vitesseY;
+        gererScroll();
+        verifierCollisions();
+
+        if (joueur.y < 0) joueur.y = 0;
+        if (joueur.y > HAUTEUR_ECRAN - 32) joueur.y = HAUTEUR_ECRAN - 32;
+
+        if (verifierVictoire()) {
+            break;
+        }
+        if (tunnel_img && tunnel_position_x > 0) {
+            draw_sprite(buffer, tunnel_img,
+                       tunnel_position_x - joueur.scrollX,
+                       tunnel_position_y);
+        }
+        updateClones();
+        clear_bitmap(buffer);
+        dessinerDecor();
+        afficherObstacles();
+        draw_sprite(buffer, tunnel_img, tunnel_position_x - joueur.scrollX, tunnel_position_y);
+        afficherJoueur();
+        drawClones();
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+        rest(20);
+        compteurTemps++;
+    }
+    // Dans jouerNiveau(), dans la boucle principale
+    if (multiplicateur_actif) {
+        for (int i = 0; i < MAX_CLONES; i++) {
+            if (clones[i].actif) {
+                // Suivre le joueur principal avec un décalage
+                clones[i].x = joueur.x + clones[i].offsetX;
+                clones[i].y = joueur.y + clones[i].offsetY;
+
+                // Copier la vitesse verticale
+                clones[i].vitesseY = joueur.vitesseY;
+
+                // Appliquer la même gravité
+                clones[i].vitesseY += GRAVITE * joueur.poids;
+                clones[i].y += clones[i].vitesseY;
+
+                // Garder dans l'écran
+                if (clones[i].y < 0) clones[i].y = 0;
+                if (clones[i].y > HAUTEUR_ECRAN - 32) clones[i].y = HAUTEUR_ECRAN - 32;
+            }
+        }
+    }
+    if (verifierVictoire()) {
+        clear_bitmap(buffer);
+
+        // Fond semi-transparent
+        rectfill(buffer, 100, 100, LARGEUR_ECRAN-100, HAUTEUR_ECRAN-100, makecol(0, 0, 0));
+        set_trans_blender(0, 0, 0, 128);
+
+
+        // Message de victoire
+        textout_centre_ex(buffer, font, "VICTOIRE!",
+                         LARGEUR_ECRAN/2, HAUTEUR_ECRAN/2 - 40,
+                         makecol(0, 255, 0), -1);
+        textout_centre_ex(buffer, font, joueur.pseudo,
+                         LARGEUR_ECRAN/2, HAUTEUR_ECRAN/2,
+                         makecol(255, 255, 0), -1);
+        textout_centre_ex(buffer, font, "Appuyez sur ESPACE pour continuer",
+                         LARGEUR_ECRAN/2, HAUTEUR_ECRAN/2 + 100,
+                         makecol(255, 255, 255), -1);
+
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR_ECRAN, HAUTEUR_ECRAN);
+
+        // Attendre que l'utilisateur appuie sur ESPACE
+        while (!key[KEY_SPACE]) {
+            rest(20);
+        }
+        clear_keybuf();
+
+        sauvegarderJoueur();
+        return;
+    }
+}
