@@ -1,0 +1,14 @@
+#define LARGEUR_ECRAN 800
+#define HAUTEUR_ECRAN 600
+#define GRAVITE 1
+#define SAUT -12
+#define SCROLL_VITESSE_BASE 3
+#define PSEUDO_MAX 20
+#define TEMPS_NIVEAU 60 * 30
+#define NB_OBSTACLES 5
+#define BOOST_DUREE 150
+#define NB_IMAGES_DECOR_MAX 20
+#define CHEMIN_DATA "data/"
+#define CHEMIN_SPRITES CHEMIN_DATA "sprites/"
+#define CHEMIN_NIVEAUX CHEMIN_DATA "niveaux/"
+#define CHEMIN_DECORS CHEMIN_DATA "decors/"
